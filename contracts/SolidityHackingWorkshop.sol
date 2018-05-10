@@ -11,9 +11,9 @@ Being able to destroy your own stuff is not a vulnerability and should be dealt 
 */
 
 pragma solidity ^0.4.10;
-//*** Exercice 1 ***//
+//*** Exercise 1 ***//
 // Simple token you can buy and send.
-contract SimpleToken{
+contract SimpleToken {
     mapping(address => uint) public balances;
     
     /// @dev Buy token at the price of 1ETH/token.
@@ -26,7 +26,9 @@ contract SimpleToken{
      *  @param _amount The amount to send.
      */
     function sendToken(address _recipient, uint _amount) {
-        require(balances[msg.sender]!=0); // You must have some tokens.
+        //This require was incorrectly checking for a balance <> 0 when it needed to check for amount
+        //Solution: >= _amount instead of != 0
+        require(balances[msg.sender] >= _amount); // You must have some tokens.
         
         balances[msg.sender]-=_amount;
         balances[_recipient]+=_amount;
@@ -34,10 +36,10 @@ contract SimpleToken{
     
 }
 
-//*** Exercice 2 ***//
+//*** Exercise 2 ***//
 // You can buy voting rights by sending ether to the contract.
 // You can vote for the value of your choice.
-contract VoteTwoChoices{
+contract VoteTwoChoices {
     mapping(address => uint) public votingRights;
     mapping(address => uint) public votesCast;
     mapping(bytes32 => uint) public votesReceived;
@@ -52,15 +54,18 @@ contract VoteTwoChoices{
      *  @param _proposition The proposition to vote for.
      */
     function vote(uint _nbVotes, bytes32 _proposition) {
-        require(_nbVotes + votesCast[msg.sender]<=votingRights[msg.sender]); // Check you have enough voting rights.
+        //This require accepted 0 as _nbVotes making the contract able to accept casting a vote for 0 with multiple _propositions.
+        //While it's true that the caller is spending gas it's probably a grief because it can
+        //have the list of propositions grow to a high amount with no votes (just 0)
+        //Solution: _nbVotes should be greater than 0
+        require(_nbVotes > 0 && _nbVotes + votesCast[msg.sender]<=votingRights[msg.sender]); // Check you have enough voting rights.
         
         votesCast[msg.sender]+=_nbVotes;
         votesReceived[_proposition]+=_nbVotes;
     }
-
 }
 
-//*** Exercice 3 ***//
+//*** Exercise 3 ***//
 // You can buy tokens.
 // The owner can set the price.
 contract BuyToken {
@@ -83,43 +88,64 @@ contract BuyToken {
      */
     function setPrice(uint _price) {
         require(msg.sender==owner);
+        //Having the possibility of a 0 price allows the contract to inflate to almost infinite tokens
+        //This require expects the price to be higher than 0
+        require(_price > 0);
         
         price=_price;
     }
 }
 
-//*** Exercice 4 ***//
+//*** Exercise 4 ***//
 // Contract to store and redeem money.
 contract Store {
-    struct Safe {
-        address owner;
-        uint amount;
-    }
+    // struct Safe {
+    //     address owner;
+    //     uint amount;
+    // }
     
-    Safe[] public safes;
+    // Safe[] public oldSafes;
+
+    mapping (address => uint) private safes;
     
     /// @dev Store some ETH.
     function store() payable {
-        safes.push(Safe({owner: msg.sender, amount: msg.value}));
+        safes[msg.sender] += msg.value;
     }
+
+    // /// @dev Store some ETH.
+    // function oldStore() payable {
+    //     oldSafes.push(Safe({owner: msg.sender, amount: msg.value}));
+    // }
     
+    // /// As the number of safes increases it could potentially increase the
+    // /// amount of gas required to redeem your eth.
+    // /// I will change this implementation to a map to avoid the loop
+    // /// @dev Take back all the amount stored.
+    // function oldTake() {
+    //     for (uint i; i<safes.length; ++i) {
+    //         Safe safe = safes[i];
+    //         if (safe.owner==msg.sender && safe.amount!=0) {
+    //             msg.sender.transfer(safe.amount);
+    //             safe.amount=0;
+    //         }
+    //     }
+    // }
+
     /// @dev Take back all the amount stored.
     function take() {
-        for (uint i; i<safes.length; ++i) {
-            Safe safe = safes[i];
-            if (safe.owner==msg.sender && safe.amount!=0) {
-                msg.sender.transfer(safe.amount);
-                safe.amount=0;
-            }
+        uint amount = safes[msg.sender];
+        if (amount > 0) {
+            safes[msg.sender] = 0;
+            msg.sender.transfer(amount);
         }
-        
     }
 }
 
-//*** Exercice 5 ***//
+//*** Exercise 5 ***//
 // Count the total contribution of each user.
 // Assume that the one creating the contract contributed 1ETH.
-contract CountContribution{
+contract CountContribution {
     mapping(address => uint) public contribution;
     uint public totalContributions;
     address owner=msg.sender;
@@ -138,14 +164,18 @@ contract CountContribution{
      *  @param _user The user who contributed.
      *  @param _amount The amount of the contribution.
      */
-    function recordContribution(address _user, uint _amount) {
+     // Avoiding to specify a visibility for a function automatically defaults it to "public"
+     // By being public this method can be called by anyone skipping the payable one and
+     // thus defeating the purpose :).
+     // Solution: Set this function to private visibility
+    function recordContribution(address _user, uint _amount) private {
         contribution[_user]+=_amount;
         totalContributions+=_amount;
     }
     
 }
 
-//*** Exercice 6 ***//
+//*** Exercise 6 ***//
 contract Token {
     mapping(address => uint) public balances;
     
@@ -169,13 +199,15 @@ contract Token {
      *  @param _recipient The recipient.
      */
     function sendAllTokens(address _recipient) {
-        balances[_recipient]=+balances[msg.sender];
+        // This is a typo. It's replacing the balances instead of adding them.
+        // Solution: Convert this to a sum operator
+        balances[_recipient]+=balances[msg.sender];
         balances[msg.sender]=0;
     }
     
 }
 
-//*** Exercice 7 ***//
+//*** Exercise 7 ***//
 // You can buy some object.
 // Further purchases are discounted.
 // You need to pay basePrice / (1 + objectBought), where objectBought is the number of object you previously bought.
@@ -185,7 +217,13 @@ contract DiscountedBuy {
 
     /// @dev Buy an object.
     function buy() payable {
-        require(msg.value * (1 + objectBought[msg.sender]) == basePrice);
+        //This function was unable to process by paying the amount returned by price() 3 times
+        //Due to number rounding we can't have the formula the way we had it because
+        //when the price is 1/3 eth there is no way to make the multiplication be equal to exactly 1 eth
+        //rendering the user unable to buy the 3rd time
+        //Solution: Validate the require with the exact formula that price() provides
+        require(msg.value == (basePrice / (1 + objectBought[msg.sender])));
+        //require(msg.value * (1 + objectBought[msg.sender]) == basePrice);
         objectBought[msg.sender]+=1;
     }
     
@@ -198,10 +236,20 @@ contract DiscountedBuy {
     
 }
 
-//*** Exercice 8 ***//
+//*** Exercise 8 ***//
 // You choose Head or Tail and send 1 ETH.
 // The next party send 1 ETH and try to guess what you chose.
 // If it succeed it gets 2 ETH, else you get 2 ETH.
+
+//The guess info is visible in the blockchain. For this contract to work the approach
+//needs to be altered in a way that the value to be guesses can't be exposed. 
+//One way I suggest is for it to become in 3 steps:
+//1) The chooser sends a bytes32 which is hash(password, choice) where password is a secret word
+//2) The guesser sends his/her guess
+//3) The chooser calls a 3rd function sending the password clearly, then the evm validates hash(password, guesser's choice) to see if it matches
+//
+//Of course this leaves another vulnerability: The chooser being reluctant to call the 3rd function if he/she knows he lost.
+//That can be worked around, perhaps with a timeout
 contract HeadOrTail {
     bool public chosen; // True if head/tail has been chosen.
     bool lastChoiceHead; // True if the choice is head.
@@ -234,7 +282,7 @@ contract HeadOrTail {
     }
 }
 
-//*** Exercice 9 ***//
+//*** Exercise 9 ***//
 // You can store ETH in this contract and redeem them.
 contract Vault {
     mapping(address => uint) public balances;
@@ -246,12 +294,17 @@ contract Vault {
     
     /// @dev Redeem your ETH.
     function redeem() {
-        msg.sender.call.value(balances[msg.sender])();
+        //This was subject to a vulnerability regarding msg.sender being another contract
+        //and exploiting the fact that balances[msg.sender] is still not 0 at that point
+        uint _balance = balances[msg.sender];
+        require(_balance > 0);
         balances[msg.sender]=0;
+        msg.sender.transfer(_balance);
+//        msg.sender.call.value(balances[msg.sender])();
     }
 }
 
-//*** Exercice 10 ***//
+//*** Exercise 10 ***//
 // You choose Head or Tail and send 1 ETH.
 // The next party send 1 ETH and try to guess what you chose.
 // If it succeed it gets 2 ETH, else you get 2 ETH.
@@ -279,6 +332,11 @@ contract HeadTail {
      */
     function guess(bool _chooseHead) payable {
         require(msg.value == 1 ether);
+        //The contract doesn't limit the amount of guesses so it can be exposed to the following:
+        //1) another party being able to guess on top of someone else's guess and rendering old partyB unable to win or lose because his/her state was overwritten by someone else's guess
+        //2) There is a small window of time where partyB can scan the transactions looking for a resolve() call and respond with a call to guess() with the right choice but higher gas in order to be considered first
+        //Solution: Limit the call to guess()
+        require(timeB > 0);
         
         chooseHeadB=_chooseHead;
         timeB=now;
@@ -311,7 +369,7 @@ contract HeadTail {
     
 }
 
-//*** Exercice 11 ***//
+//*** Exercise 11 ***//
 // You can store ETH in this contract and redeem them.
 contract VaultInvariant {
     mapping(address => uint) public balances;
@@ -332,10 +390,21 @@ contract VaultInvariant {
     }
     
     /// @dev Let a user get all funds if an invariant is broken.
+    
+    ///Working with this.balance is dangerous. The following contract called VaultInvariantBreaker
+    ///If deployed given VaultInvariant's address will render it in an invariant state
+    ///Allowing anyone to call invariantBroken and clearing it's balance
     function invariantBroken() {
         require(totalBalance!=this.balance);
         
         msg.sender.transfer(this.balance);
     }
-    
+}
+
+
+contract VaultInvariantBreaker {
+    function VaultInvariantBreaker(address vlt) payable {
+        require(msg.value > 0);
+        selfdestruct(vlt);
+    }
 }
