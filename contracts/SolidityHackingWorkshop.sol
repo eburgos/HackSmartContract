@@ -36,9 +36,13 @@ contract SimpleToken {
     
 }
 
-//*** Exercise 2 ***//
+//*** Exercice 2 ***//
 // You can buy voting rights by sending ether to the contract.
 // You can vote for the value of your choice.
+
+// This contract allows people to see the results while the voting is ongoing so it may increase bias
+// and the willingness to vote for some other proposition just because your choice will lose or
+// because you don't want to lose at all
 contract VoteTwoChoices {
     mapping(address => uint) public votingRights;
     mapping(address => uint) public votesCast;
@@ -53,16 +57,17 @@ contract VoteTwoChoices {
      *  @param _nbVotes The number of votes to cast.
      *  @param _proposition The proposition to vote for.
      */
+
     function vote(uint _nbVotes, bytes32 _proposition) {
-        //This require accepted 0 as _nbVotes making the contract able to accept casting a vote for 0 with multiple _propositions.
-        //While it's true that the caller is spending gas it's probably a grief because it can
-        //have the list of propositions grow to a high amount with no votes (just 0)
-        //Solution: _nbVotes should be greater than 0
-        require(_nbVotes > 0 && _nbVotes + votesCast[msg.sender]<=votingRights[msg.sender]); // Check you have enough voting rights.
+        // AND I still think votes should be greater than 0. Makes no sense to cast 0 votes :)
+        // You could even vote 0 votes multiple times without having even bought voting rights
+        require(_nbVotes > 0); /* changed */
+        require(_nbVotes + votesCast[msg.sender]<=votingRights[msg.sender]); // Check you have enough voting rights.
         
         votesCast[msg.sender]+=_nbVotes;
         votesReceived[_proposition]+=_nbVotes;
     }
+
 }
 
 //*** Exercise 3 ***//
@@ -86,6 +91,9 @@ contract BuyToken {
     /** @dev Set the price, only the owner can do it.
      *  @param _price The new price.
      */
+     // Having this function here allows for an attacker to watch for price increasing attempts in the blockchain
+     // and sneak in some buying transactions in the same block before they price increases forcing the contract
+     // to sell them tokens after they expressed their will to change the token price.
     function setPrice(uint _price) {
         require(msg.sender==owner);
         //Having the possibility of a 0 price allows the contract to inflate to almost infinite tokens
@@ -336,7 +344,7 @@ contract HeadTail {
         //1) another party being able to guess on top of someone else's guess and rendering old partyB unable to win or lose because his/her state was overwritten by someone else's guess
         //2) There is a small window of time where partyB can scan the transactions looking for a resolve() call and respond with a call to guess() with the right choice but higher gas in order to be considered first
         //Solution: Limit the call to guess()
-        require(timeB > 0);
+        require(timeB == 0);
         
         chooseHeadB=_chooseHead;
         timeB=now;
